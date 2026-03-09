@@ -1,0 +1,341 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Users & Subscriptions ───────────────────────────────────────
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ANALYST
+  WHALE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+model User {
+  id              String             @id @default(cuid())
+  address         String?            @unique // wallet address
+  email           String?            @unique
+  name            String?
+  image           String?
+  emailVerified   DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  accounts        Account[]
+  sessions        Session[]
+  subscription    Subscription?
+  wallets         Wallet[]
+  alerts          Alert[]
+  alertHistory    AlertHistory[]
+  positions       Position[]
+  tradingJournals TradingJournal[]
+  apiKeys         ApiKey[]
+  preferences     UserPreferences?
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 SubscriptionTier   @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model UserPreferences {
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramChatId        String?
+  emailNotifications    Boolean @default(true)
+  telegramNotifications Boolean @default(false)
+  healthFactorThreshold Float   @default(1.5)
+  largeTransferMinUsd   Float   @default(100000)
+  theme                 String  @default("dark")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String   @unique
+  name      String
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([userId])
+}
+
+// ─── Wallets & Positions ─────────────────────────────────────────
+
+enum Chain {
+  ETHEREUM
+  ARBITRUM
+  BASE
+  SOLANA
+  BNB
+}
+
+model Wallet {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address   String
+  chain     Chain
+  label     String?
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  positions Position[]
+
+  @@unique([userId, address, chain])
+  @@index([address])
+}
+
+enum Protocol {
+  AAVE_V3
+  COMPOUND_V3
+  YEARN
+  CURVE
+  UNISWAP
+  OTHER
+}
+
+model Position {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId       String
+  wallet         Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  protocol       Protocol
+  chain          Chain
+  asset          String   // token symbol
+  assetAddress   String   // token contract address
+  supplyAmount   Float    @default(0)
+  borrowAmount   Float    @default(0)
+  supplyValueUsd Float    @default(0)
+  borrowValueUsd Float    @default(0)
+  healthFactor   Float?
+  liquidationPrice Float?
+  apy            Float?
+  lastUpdated    DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([protocol, chain])
+}
+
+// ─── Alerts ──────────────────────────────────────────────────────
+
+enum AlertType {
+  HEALTH_FACTOR
+  LARGE_TRANSFER
+  YIELD_CHANGE
+  LIQUIDATION
+  WHALE_MOVEMENT
+  PRICE_ALERT
+  MEV_DETECTED
+}
+
+enum AlertChannel {
+  EMAIL
+  TELEGRAM
+  IN_APP
+}
+
+model Alert {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      AlertType
+  channel   AlertChannel @default(IN_APP)
+  condition Json         // flexible condition storage
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId, type])
+}
+
+model AlertHistory {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      AlertType
+  title     String
+  message   String    @db.Text
+  metadata  Json?
+  read      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ─── Trading Journal ─────────────────────────────────────────────
+
+enum TradeType {
+  LONG
+  SHORT
+  SWAP
+  PROVIDE_LIQUIDITY
+  REMOVE_LIQUIDITY
+}
+
+model TradingJournal {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chain       Chain
+  protocol    String
+  tradeType   TradeType
+  tokenIn     String
+  tokenOut    String
+  amountIn    Float
+  amountOut   Float
+  priceAtEntry Float
+  priceAtExit  Float?
+  pnl         Float?
+  pnlPercent  Float?
+  txHash      String?
+  notes       String?   @db.Text
+  tags        String[]
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+
+  @@index([userId, openedAt])
+}
+
+// ─── Analytics (time-series — use TimescaleDB hypertables) ──────
+
+model YieldSnapshot {
+  id         String   @id @default(cuid())
+  protocol   Protocol
+  chain      Chain
+  pool       String
+  asset      String
+  apy        Float
+  tvlUsd     Float
+  timestamp  DateTime @default(now())
+
+  @@index([protocol, chain, timestamp])
+  @@index([asset, timestamp])
+}
+
+model WhaleTransaction {
+  id          String   @id @default(cuid())
+  chain       Chain
+  txHash      String   @unique
+  fromAddress String
+  toAddress   String
+  fromLabel   String?
+  toLabel     String?
+  asset       String
+  amount      Float
+  valueUsd    Float
+  blockNumber Int
+  timestamp   DateTime
+
+  @@index([chain, timestamp])
+  @@index([fromAddress])
+  @@index([toAddress])
+  @@index([valueUsd])
+}
+
+model TvlSnapshot {
+  id        String   @id @default(cuid())
+  protocol  String
+  chain     Chain
+  tvlUsd    Float
+  change24h Float?
+  timestamp DateTime @default(now())
+
+  @@index([protocol, chain, timestamp])
+}
+
+model MevEvent {
+  id            String   @id @default(cuid())
+  chain         Chain
+  txHash        String   @unique
+  type          String   // sandwich, arbitrage, liquidation
+  profitUsd     Float
+  victimAddress String?
+  botAddress    String?
+  blockNumber   Int
+  timestamp     DateTime
+
+  @@index([chain, timestamp])
+  @@index([type, timestamp])
+}
+
+// ─── Wallet Labels (for whale tracking) ──────────────────────────
+
+model WalletLabel {
+  id        String   @id @default(cuid())
+  address   String
+  chain     Chain
+  label     String
+  category  String   // exchange, whale, fund, protocol, mev_bot
+  source    String   // manual, etherscan, arkham
+  createdAt DateTime @default(now())
+
+  @@unique([address, chain])
+  @@index([category])
+}
