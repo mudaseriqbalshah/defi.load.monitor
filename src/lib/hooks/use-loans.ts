@@ -1,18 +1,27 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { LoanPosition, ApiResponse } from "@/types";
+import type { ApiResponse } from "@/types";
+import type { AggregatedLoanData } from "@/lib/services/loans";
 
-export function useLoans(address: string | undefined, chain: string = "ETHEREUM") {
-  return useQuery<LoanPosition[]>({
-    queryKey: ["loans", address, chain],
+export function useLoans(
+  address: string | undefined,
+  chains?: string[]
+) {
+  return useQuery<AggregatedLoanData>({
+    queryKey: ["loans", address, chains],
     queryFn: async () => {
-      const res = await fetch(`/api/loans?address=${address}&chain=${chain}`);
-      const json = (await res.json()) as ApiResponse<LoanPosition[]>;
+      const params = new URLSearchParams();
+      if (address) params.set("address", address);
+      if (chains?.length === 1) params.set("chain", chains[0]);
+
+      const res = await fetch(`/api/loans?${params}`);
+      const json = (await res.json()) as ApiResponse<AggregatedLoanData>;
       if (json.error) throw new Error(json.error);
-      return json.data ?? [];
+      return json.data!;
     },
-    enabled: !!address,
+    enabled: !!address && /^0x[a-fA-F0-9]{40}$/.test(address),
     staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 }
