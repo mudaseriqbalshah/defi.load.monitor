@@ -22,6 +22,9 @@ export interface YieldPool {
   apy: number;
   apyBase: number;
   apyReward: number;
+  apyPct1D: number | null;
+  apyPct7D: number | null;
+  apyPct30D: number | null;
   rewardTokens: string[];
   stablecoin: boolean;
   ilRisk: string;
