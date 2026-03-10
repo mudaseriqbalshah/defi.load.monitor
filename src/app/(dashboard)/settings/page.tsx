@@ -31,6 +31,15 @@ export default function SettingsPage() {
             Manage your subscription, upgrade plan, or pay with USDC.
           </p>
         </Link>
+        <Link
+          href="/settings/api-keys"
+          className="rounded-lg border bg-card p-6 transition-colors hover:bg-accent"
+        >
+          <h3 className="font-semibold">API Keys</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Generate and manage API keys for programmatic access.
+          </p>
+        </Link>
       </div>
     </div>
   );
